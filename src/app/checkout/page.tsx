@@ -1,24 +1,87 @@
 "use client";
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { useCart } from '@/context/CartContext';
-import { CheckCircle, PartyPopper } from 'lucide-react';
+import { PartyPopper, Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
-export default function CheckoutPage() {
-  const { totalPrice, clearCart } = useCart();
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+
+function CheckoutForm() {
+  const stripe = useStripe();
+  const elements = useElements();
+  const { clearCart } = useCart();
+  const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // In a real app, you would process the payment here.
-    setIsSubmitted(true);
-    clearCart();
+    if (!stripe || !elements) {
+      return;
+    }
+    setIsLoading(true);
+
+    const { error } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: `${window.location.origin}/checkout`,
+      },
+    });
+
+    if (error.type === "card_error" || error.type === "validation_error") {
+      toast({
+        variant: "destructive",
+        title: "Payment failed",
+        description: error.message,
+      });
+    } else {
+        toast({
+            variant: "destructive",
+            title: "An unexpected error occurred",
+            description: "Please try again.",
+        });
+    }
+    setIsLoading(false);
   };
+  
+  useEffect(() => {
+    if (!stripe) {
+      return;
+    }
+
+    const clientSecret = new URLSearchParams(window.location.search).get(
+      "payment_intent_client_secret"
+    );
+
+    if (!clientSecret) {
+      return;
+    }
+
+    stripe.retrievePaymentIntent(clientSecret).then(({ paymentIntent }) => {
+      switch (paymentIntent?.status) {
+        case "succeeded":
+          setIsSubmitted(true);
+          clearCart();
+          break;
+        case "processing":
+           toast({ title: "Payment processing.", description: "We'll update you when payment is received." });
+          break;
+        case "requires_payment_method":
+          toast({ variant: "destructive", title: "Payment failed.", description: "Please try another payment method." });
+          break;
+        default:
+          toast({ variant: "destructive", title: "Something went wrong." });
+          break;
+      }
+    });
+  }, [stripe, clearCart, toast]);
+
 
   if (isSubmitted) {
     return (
@@ -34,54 +97,65 @@ export default function CheckoutPage() {
   }
 
   return (
+     <form onSubmit={handleSubmit}>
+        <CardContent>
+            <PaymentElement />
+        </CardContent>
+        <CardFooter>
+            <Button type="submit" disabled={isLoading || !stripe || !elements} size="lg" className="w-full">
+                {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : `Pay now`}
+            </Button>
+        </CardFooter>
+    </form>
+  )
+}
+
+export default function CheckoutPage() {
+  const { totalPrice } = useCart();
+  const [clientSecret, setClientSecret] = useState("");
+
+  const finalPrice = Math.round(totalPrice * 1.1 * 100);
+
+  useEffect(() => {
+    if (totalPrice > 0) {
+        fetch('/api/create-payment-intent', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount: finalPrice }),
+        })
+        .then((res) => res.json())
+        .then((data) => setClientSecret(data.clientSecret));
+    }
+  }, [totalPrice, finalPrice]);
+
+  const options = {
+    clientSecret,
+    appearance: {
+        theme: 'stripe' as const,
+        variables: {
+            colorPrimary: '#f97316',
+            colorBackground: '#ffffff',
+            colorText: '#333333',
+        },
+    }
+  };
+
+  return (
     <div className="container py-12 md:py-16 flex justify-center">
       <Card className="w-full max-w-2xl shadow-xl">
         <CardHeader>
           <CardTitle className="font-headline text-3xl">Checkout</CardTitle>
-          <CardDescription>Please enter your details to complete the order.</CardDescription>
+          <CardDescription>Total: ${(finalPrice / 100).toFixed(2)}</CardDescription>
         </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="name">Full Name</Label>
-              <Input id="name" placeholder="John Doe" required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
-              <Input id="email" type="email" placeholder="john@example.com" required />
-            </div>
-            <div className="space-y-2">
-              <Label>Payment Details</Label>
-              <div className="p-3 border rounded-md bg-secondary text-sm text-muted-foreground">
-                This is a demo. No real payment will be processed.
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="card-number">Card Number</Label>
-              <Input id="card-number" placeholder="**** **** **** 1234" disabled />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="expiry">Expiry Date</Label>
-                <Input id="expiry" placeholder="MM/YY" disabled />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="cvc">CVC</Label>
-                <Input id="cvc" placeholder="123" disabled />
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter className="flex flex-col items-stretch">
-            <div className="flex justify-between font-bold text-lg mb-4">
-                <span>Total to Pay</span>
-                <span>${(totalPrice * 1.1).toFixed(2)}</span>
-              </div>
-            <Button type="submit" size="lg" className="w-full">
-              <CheckCircle className="mr-2 h-5 w-5" />
-              Place Order
-            </Button>
-          </CardFooter>
-        </form>
+        {clientSecret ? (
+          <Elements options={options} stripe={stripePromise}>
+            <CheckoutForm />
+          </Elements>
+        ) : (
+          <div className="flex justify-center items-center h-48">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        )}
       </Card>
     </div>
   );
