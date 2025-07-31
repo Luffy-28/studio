@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 6, "column": 0}, "map": {"version":3,"sources":[],"names":[],"mappings":"","debugId":null}},
+    {"offset": {"line": 108, "column": 0}, "map": {"version":3,"sources":["file:///home/user/studio/src/app/api/create-payment-intent/route.ts"],"sourcesContent":["import { NextResponse } from 'next/server';\nimport Stripe from 'stripe';\n\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {\n  apiVersion: '2024-06-20',\n});\n\nexport async function POST(request: Request) {\n  const { amount } = await request.json();\n\n  try {\n    const paymentIntent = await stripe.paymentIntents.create({\n      amount,\n      currency: 'usd',\n      automatic_payment_methods: {\n        enabled: true,\n      },\n    });\n\n    return NextResponse.json({ clientSecret: paymentIntent.client_secret });\n  } catch (error: any) {\n    return new NextResponse(error.message, { status: 400 });\n  }\n}\n"],"names":[],"mappings":";;;AAAA;AACA;;;AAEA,MAAM,SAAS,IAAI,wJAAA,CAAA,UAAM,CAAC,QAAQ,GAAG,CAAC,iBAAiB,EAAG;IACxD,YAAY;AACd;AAEO,eAAe,KAAK,OAAgB;IACzC,MAAM,EAAE,MAAM,EAAE,GAAG,MAAM,QAAQ,IAAI;IAErC,IAAI;QACF,MAAM,gBAAgB,MAAM,OAAO,cAAc,CAAC,MAAM,CAAC;YACvD;YACA,UAAU;YACV,2BAA2B;gBACzB,SAAS;YACX;QACF;QAEA,OAAO,gIAAA,CAAA,eAAY,CAAC,IAAI,CAAC;YAAE,cAAc,cAAc,aAAa;QAAC;IACvE,EAAE,OAAO,OAAY;QACnB,OAAO,IAAI,gIAAA,CAAA,eAAY,CAAC,MAAM,OAAO,EAAE;YAAE,QAAQ;QAAI;IACvD;AACF","debugId":null}}]
+}
